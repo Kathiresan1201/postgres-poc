@@ -1,0 +1,24 @@
+---
+# Step 2 of the Morpheus "PostgreSQL on vSphere" catalog item (POC).
+# Morpheus runs this against the VM it just provisioned and passes the
+# catalog inputs as customOptions. See morpheus/README.md.
+- name: Install PostgreSQL on a Morpheus-provisioned VM
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    postgresql_app_database: "{{ customOptions.pgAppDatabase }}"
+    postgresql_app_user: "{{ customOptions.pgAppUser }}"
+    postgresql_app_password: "{{ customOptions.pgAppPassword }}"
+    # POC: app user may connect from any IPv4 network (password auth, app DB only).
+    # Narrow this to the application subnet before any non-POC use.
+    postgresql_allowed_networks: ["0.0.0.0/0"]
+    postgresql_listen_addresses: "0.0.0.0"
+
+    # POC: postgres superuser stays local peer-auth only, no firewall changes.
+    postgresql_manage_admin_password: false
+    postgresql_configure_ufw: false
+
+  roles:
+    - postgresql

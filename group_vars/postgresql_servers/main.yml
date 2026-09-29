@@ -1,0 +1,35 @@
+---
+postgresql_version: "16"
+postgresql_port: 5432
+postgresql_listen_addresses: "0.0.0.0"
+
+postgresql_allowed_networks:
+  - "10.10.20.0/24"
+
+postgresql_app_database: application_db
+postgresql_app_user: application_user
+
+postgresql_encoding: UTF8
+postgresql_locale: en_US.UTF-8
+
+postgresql_max_connections: 200
+postgresql_shared_buffers: 1GB
+postgresql_effective_cache_size: 3GB
+postgresql_maintenance_work_mem: 256MB
+postgresql_work_mem: 8MB
+postgresql_wal_buffers: 16MB
+postgresql_min_wal_size: 1GB
+postgresql_max_wal_size: 4GB
+postgresql_checkpoint_completion_target: 0.9
+postgresql_random_page_cost: 1.1
+postgresql_effective_io_concurrency: 200
+
+postgresql_log_connections: "on"
+postgresql_log_disconnections: "on"
+postgresql_log_checkpoints: "on"
+postgresql_log_lock_waits: "on"
+postgresql_log_temp_files: 0
+postgresql_log_min_duration_statement: 1000
+
+postgresql_configure_ufw: true
+postgresql_enable_ufw: false

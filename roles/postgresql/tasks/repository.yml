@@ -1,0 +1,31 @@
+---
+- name: Create PGDG key directory
+  ansible.builtin.file:
+    path: /usr/share/postgresql-common/pgdg
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download PostgreSQL PGDG repository signing key
+  ansible.builtin.get_url:
+    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    dest: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+    owner: root
+    group: root
+    mode: "0644"
+    force: true
+
+- name: Configure PostgreSQL PGDG repository
+  ansible.builtin.template:
+    src: pgdg.sources.j2
+    dest: /etc/apt/sources.list.d/pgdg.sources
+    owner: root
+    group: root
+    mode: "0644"
+  register: postgresql_repository_result
+
+- name: Update APT cache after configuring PGDG
+  ansible.builtin.apt:
+    update_cache: true
+  when: postgresql_repository_result.changed

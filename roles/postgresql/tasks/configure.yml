@@ -1,0 +1,88 @@
+---
+- name: Configure PostgreSQL server parameters
+  ansible.builtin.lineinfile:
+    path: "{{ postgresql_config_file }}"
+    regexp: '^\s*#?\s*{{ item.option }}\s*='
+    line: "{{ item.option }} = {{ item.value }}"
+    owner: postgres
+    group: postgres
+    mode: "0644"
+    backup: true
+  loop:
+    - { option: listen_addresses, value: "'{{ postgresql_listen_addresses }}'" }
+    - { option: port, value: "{{ postgresql_port }}" }
+    - { option: password_encryption, value: "'scram-sha-256'" }
+    - { option: max_connections, value: "{{ postgresql_max_connections }}" }
+    - { option: shared_buffers, value: "'{{ postgresql_shared_buffers }}'" }
+    - { option: effective_cache_size, value: "'{{ postgresql_effective_cache_size }}'" }
+    - { option: maintenance_work_mem, value: "'{{ postgresql_maintenance_work_mem }}'" }
+    - { option: work_mem, value: "'{{ postgresql_work_mem }}'" }
+    - { option: wal_buffers, value: "'{{ postgresql_wal_buffers }}'" }
+    - { option: min_wal_size, value: "'{{ postgresql_min_wal_size }}'" }
+    - { option: max_wal_size, value: "'{{ postgresql_max_wal_size }}'" }
+    - { option: checkpoint_completion_target, value: "{{ postgresql_checkpoint_completion_target }}" }
+    - { option: random_page_cost, value: "{{ postgresql_random_page_cost }}" }
+    - { option: effective_io_concurrency, value: "{{ postgresql_effective_io_concurrency }}" }
+    - { option: logging_collector, value: "on" }
+    - { option: log_directory, value: "'{{ postgresql_log_directory }}'" }
+    - { option: log_filename, value: "'{{ postgresql_log_filename }}'" }
+    - { option: log_rotation_age, value: "'{{ postgresql_log_rotation_age }}'" }
+    - { option: log_truncate_on_rotation, value: "{{ postgresql_log_truncate_on_rotation }}" }
+    - { option: log_connections, value: "{{ postgresql_log_connections }}" }
+    - { option: log_disconnections, value: "{{ postgresql_log_disconnections }}" }
+    - { option: log_checkpoints, value: "{{ postgresql_log_checkpoints }}" }
+    - { option: log_lock_waits, value: "{{ postgresql_log_lock_waits }}" }
+    - { option: log_temp_files, value: "{{ postgresql_log_temp_files }}" }
+    - { option: log_min_duration_statement, value: "{{ postgresql_log_min_duration_statement }}" }
+  notify: Restart PostgreSQL
+
+- name: Configure local peer authentication
+  community.postgresql.postgresql_pg_hba:
+    dest: "{{ postgresql_hba_file }}"
+    contype: local
+    databases: all
+    users: all
+    method: peer
+    create: true
+    backup: true
+  notify: Reload PostgreSQL
+
+- name: Configure localhost IPv4 authentication
+  community.postgresql.postgresql_pg_hba:
+    dest: "{{ postgresql_hba_file }}"
+    contype: host
+    databases: all
+    users: all
+    source: 127.0.0.1/32
+    method: scram-sha-256
+    create: true
+    backup: true
+  notify: Reload PostgreSQL
+
+- name: Configure localhost IPv6 authentication
+  community.postgresql.postgresql_pg_hba:
+    dest: "{{ postgresql_hba_file }}"
+    contype: host
+    databases: all
+    users: all
+    source: ::1/128
+    method: scram-sha-256
+    create: true
+    backup: true
+  notify: Reload PostgreSQL
+
+- name: Allow application networks
+  community.postgresql.postgresql_pg_hba:
+    dest: "{{ postgresql_hba_file }}"
+    contype: host
+    databases: "{{ postgresql_app_database }}"
+    users: "{{ postgresql_app_user }}"
+    source: "{{ item }}"
+    method: scram-sha-256
+    create: true
+    backup: true
+  loop: "{{ postgresql_allowed_networks }}"
+  notify: Reload PostgreSQL
+
+- name: Apply PostgreSQL handlers before database configuration
+  ansible.builtin.meta: flush_handlers

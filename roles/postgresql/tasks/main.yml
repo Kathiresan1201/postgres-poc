@@ -1,0 +1,38 @@
+---
+- name: Validate PostgreSQL role variables
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution == "Ubuntu"
+      - postgresql_version | string | length > 0
+      - postgresql_port | int > 0
+      - postgresql_port | int <= 65535
+      - not postgresql_manage_admin_password or postgresql_admin_password is defined
+      - not postgresql_create_app_user or postgresql_app_password is defined
+    fail_msg: "PostgreSQL role validation failed. Confirm Ubuntu and required vault passwords."
+  no_log: true
+  tags: [postgresql, postgresql_validate]
+
+- name: Validate PostgreSQL passwords
+  ansible.builtin.assert:
+    that:
+      - not postgresql_manage_admin_password or postgresql_admin_password | length >= 12
+      - not postgresql_create_app_user or postgresql_app_password | length >= 12
+    fail_msg: "PostgreSQL passwords must be at least 12 characters long."
+  no_log: true
+  tags: [postgresql, postgresql_validate]
+
+- ansible.builtin.import_tasks: prerequisites.yml
+  tags: [postgresql, postgresql_prerequisites]
+- ansible.builtin.import_tasks: repository.yml
+  tags: [postgresql, postgresql_repository]
+- ansible.builtin.import_tasks: install.yml
+  tags: [postgresql, postgresql_install]
+- ansible.builtin.import_tasks: configure.yml
+  tags: [postgresql, postgresql_configure]
+- ansible.builtin.import_tasks: database.yml
+  tags: [postgresql, postgresql_database]
+- ansible.builtin.import_tasks: firewall.yml
+  when: postgresql_configure_ufw | bool
+  tags: [postgresql, postgresql_firewall]
+- ansible.builtin.import_tasks: validate.yml
+  tags: [postgresql, postgresql_validate]

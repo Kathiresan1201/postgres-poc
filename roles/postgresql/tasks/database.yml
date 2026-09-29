@@ -1,0 +1,51 @@
+---
+- name: Configure PostgreSQL administrator password
+  become_user: postgres
+  community.postgresql.postgresql_user:
+    name: postgres
+    password: "{{ postgresql_admin_password }}"
+    role_attr_flags: SUPERUSER
+    login_unix_socket: /var/run/postgresql
+    port: "{{ postgresql_port }}"
+    state: present
+  when: postgresql_manage_admin_password | bool
+  no_log: true
+
+- name: Create PostgreSQL application user
+  become_user: postgres
+  community.postgresql.postgresql_user:
+    name: "{{ postgresql_app_user }}"
+    password: "{{ postgresql_app_password }}"
+    role_attr_flags: LOGIN,NOSUPERUSER,NOCREATEDB,NOCREATEROLE,INHERIT
+    login_unix_socket: /var/run/postgresql
+    port: "{{ postgresql_port }}"
+    state: present
+  when: postgresql_create_app_user | bool
+  no_log: true
+
+- name: Create PostgreSQL application database
+  become_user: postgres
+  community.postgresql.postgresql_db:
+    name: "{{ postgresql_app_database }}"
+    owner: "{{ postgresql_app_user }}"
+    encoding: "{{ postgresql_encoding }}"
+    template: template0
+    login_unix_socket: /var/run/postgresql
+    port: "{{ postgresql_port }}"
+    state: present
+  when: postgresql_create_app_database | bool
+
+- name: Grant application user access to public schema
+  become_user: postgres
+  community.postgresql.postgresql_privs:
+    database: "{{ postgresql_app_database }}"
+    type: schema
+    objs: public
+    roles: "{{ postgresql_app_user }}"
+    privs: ALL
+    login_unix_socket: /var/run/postgresql
+    port: "{{ postgresql_port }}"
+    state: present
+  when:
+    - postgresql_create_app_user | bool
+    - postgresql_create_app_database | bool

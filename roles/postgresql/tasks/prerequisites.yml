@@ -1,0 +1,21 @@
+---
+- name: Verify supported CPU architecture
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.architecture in ['x86_64', 'aarch64', 'ppc64le']
+    fail_msg: "Unsupported CPU architecture: {{ ansible_facts.architecture }}"
+
+- name: Update Ubuntu APT cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install PostgreSQL prerequisite packages
+  ansible.builtin.apt:
+    name: "{{ postgresql_prerequisite_packages }}"
+    state: present
+
+- name: Generate PostgreSQL locale
+  community.general.locale_gen:
+    name: "{{ postgresql_locale }}"
+    state: present

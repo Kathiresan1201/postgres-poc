@@ -1,0 +1,55 @@
+---
+- name: Check PostgreSQL readiness
+  ansible.builtin.command:
+    cmd: "/usr/lib/postgresql/{{ postgresql_version }}/bin/pg_isready -h 127.0.0.1 -p {{ postgresql_port }}"
+  register: postgresql_readiness
+  changed_when: false
+  retries: 5
+  delay: 3
+  until: postgresql_readiness.rc == 0
+
+- name: Query installed PostgreSQL version
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    login_db: postgres
+    login_unix_socket: /var/run/postgresql
+    port: "{{ postgresql_port }}"
+    query: SELECT version();
+  register: postgresql_version_query
+
+- name: Verify application database exists
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    login_db: postgres
+    login_unix_socket: /var/run/postgresql
+    port: "{{ postgresql_port }}"
+    query: "SELECT datname FROM pg_database WHERE datname = %(database_name)s;"
+    named_args:
+      database_name: "{{ postgresql_app_database }}"
+  register: postgresql_database_check
+
+- name: Assert application database exists
+  ansible.builtin.assert:
+    that:
+      - postgresql_database_check.query_result | length > 0
+    fail_msg: "Database {{ postgresql_app_database }} was not found."
+    success_msg: "Database {{ postgresql_app_database }} exists."
+  when: postgresql_create_app_database | bool
+
+- name: Verify PostgreSQL TCP port
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ postgresql_port }}"
+    timeout: 10
+    state: started
+
+- name: Display installation summary
+  ansible.builtin.debug:
+    msg:
+      - "PostgreSQL role completed successfully."
+      - "Host: {{ inventory_hostname }}"
+      - "Version: {{ postgresql_version }}"
+      - "Port: {{ postgresql_port }}"
+      - "Database: {{ postgresql_app_database }}"
+      - "Application user: {{ postgresql_app_user }}"
+      - "Readiness: {{ postgresql_readiness.stdout }}"

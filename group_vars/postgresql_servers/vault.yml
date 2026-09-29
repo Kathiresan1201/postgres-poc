@@ -1,0 +1,5 @@
+---
+# Encrypt this file before production use:
+# ansible-vault encrypt group_vars/postgresql_servers/vault.yml
+postgresql_admin_password: "ChangeThisAdminPassword"
+postgresql_app_password: "ChangeThisApplicationPassword"

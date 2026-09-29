@@ -1,0 +1,16 @@
+---
+- name: Allow PostgreSQL from approved networks
+  community.general.ufw:
+    rule: allow
+    port: "{{ postgresql_port | string }}"
+    proto: tcp
+    src: "{{ item }}"
+    comment: PostgreSQL application access
+  loop: "{{ postgresql_allowed_networks }}"
+
+- name: Enable UFW when requested
+  community.general.ufw:
+    state: enabled
+    policy: deny
+    direction: incoming
+  when: postgresql_enable_ufw | bool

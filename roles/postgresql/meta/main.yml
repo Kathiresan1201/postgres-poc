@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: postgresql
+  author: Mohamed A. AbdelWahab
+  description: Install and configure PostgreSQL on Ubuntu
+  license: proprietary
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+  galaxy_tags:
+    - postgresql
+    - database
+    - ubuntu
+    - pgdg
+dependencies: []
