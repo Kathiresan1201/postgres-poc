@@ -20,5 +20,16 @@
     postgresql_manage_admin_password: false
     postgresql_configure_ufw: false
 
+    # POC sizing: smallest catalog plan is 1 vCPU / 4 GB. Role defaults
+    # (shared_buffers 1GB, effective_cache_size 3GB) fit; cap connections.
+    postgresql_max_connections: 100
+
+    # Server only; skip postgresql-server-dev (build toolchain) on POC VMs.
+    postgresql_packages:
+      - "postgresql-{{ postgresql_version }}"
+      - "postgresql-client-{{ postgresql_version }}"
+      - "postgresql-contrib-{{ postgresql_version }}"
+      - python3-psycopg2
+
   roles:
     - postgresql

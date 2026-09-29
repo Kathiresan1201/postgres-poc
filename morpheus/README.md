@@ -9,7 +9,9 @@ These are fixed for the POC: PostgreSQL 16, the role's default tuning, the `post
 
 ## Prerequisites
 
-- A vSphere cloud in Morpheus, with an Ubuntu 22.04/24.04 template registered as a Virtual Image. It needs at least 4 GB RAM, because the role defaults to 1 GB `shared_buffers`.
+- A vSphere cloud in Morpheus, with an Ubuntu 24.04 template registered as a Virtual Image. The POC uses **Morpheus Ubuntu 24.04 20250218** (image 323): a clean image with a 5 GB minimum disk, cloud-init and the agent.
+- VM size of at least 4 GB RAM, because the role defaults to 1 GB `shared_buffers`. The smallest plan offered is 1 vCPU / 4 GB.
+- A cloud-init user for SSH. The image has no stored credentials, so Morpheus uses the Linux user from the ordering user's *User Settings*.
 - Internet access from the VM to `apt.postgresql.org`.
 - This repo pushed to Git.
 - The collections installed on the Morpheus appliance: `ansible-galaxy collection install -r requirements.yml`
@@ -26,23 +28,23 @@ Type **Ansible**, Repo = the integration above, Playbook `morpheus_site.yml`, Ex
 Platform Linux. Add the task to the **Provision** phase.
 
 **4. Option lists:** *Library › Options › Option Lists › + Add*
-These fill the VM dropdowns from what already exists in Morpheus. For each one, set Type **Morpheus Api** and pick the matching source:
+For the POC, these are **Manual** lists of known-good vCenter values, so every combination is valid. The dataset is shown for this lab; replace the IDs with your own.
 
-| Option List | Source |
+| Option List | Dataset |
 |---|---|
-| `POC Groups` | Groups |
-| `POC Clouds` | Clouds |
-| `POC Networks` | Networks |
-| `POC Plans` | Plans |
+| `POC Groups` | `[{"name":"vcenter","value":"1"}]` |
+| `POC Clouds` | `[{"name":"vcenter","value":"4"}]` |
+| `POC Networks` | `[{"name":"VM-workload","value":"101"},{"name":"VM Network","value":"83"}]` |
+| `POC Plans` | `[{"name":"1 vCPU / 4 GB","value":"220"},{"name":"2 vCPU / 8 GB","value":"222"},{"name":"2 vCPU / 16 GB","value":"224"}]` |
 
 **5. Inputs:** *Library › Options › Inputs*. The Field Name must match exactly. Make all of them required.
 
 | Step | Label | Field Name | Type | Option List / Default |
 |---|---|---|---|---|
-| 1 – VM | Group | `pocGroup` | Select List | `POC Groups` |
-| 1 – VM | Cloud | `pocCloud` | Select List | `POC Clouds` (Dependent Field: `pocGroup`) |
-| 1 – VM | Network | `pocNetwork` | Select List | `POC Networks` (Dependent Field: `pocCloud`) |
-| 1 – VM | VM Size | `pocPlan` | Select List | `POC Plans` |
+| 1 – VM | Group | `pocGroup` | Select List | `POC Groups`, default `1` |
+| 1 – VM | Cloud | `pocCloud` | Select List | `POC Clouds`, default `4` |
+| 1 – VM | Network | `pocNetwork` | Select List | `POC Networks`, default `101` |
+| 1 – VM | VM Size | `pocPlan` | Select List | `POC Plans`, default `220` |
 | 1 – VM | Disk Size (GB) | `pocDiskSize` | Number | default `50` |
 | 1 – VM | VM Name | `instanceName` | Text | e.g. `pgpoc01` |
 | 2 – DB | Database Name | `pgAppDatabase` | Text | e.g. `appdb` |
@@ -84,7 +86,7 @@ The Step 1 inputs are used only by Morpheus to build the VM. The Step 2 inputs a
 
 **Notes**
 - **Resource pool, folder and datastore stay as the wizard set them**, and they belong to one specific vCenter. If users can pick a different vSphere cloud, remove those keys, or set the datastore to `"auto"`, so Morpheus uses that cloud's defaults.
-- **The dropdowns list everything.** For example, Plans includes non-VMware plans, and Clouds includes clouds outside the chosen group. For the POC, just pick valid combinations. To narrow the lists later, add a Translation Script to each option list.
+- **The dropdowns are fixed lists.** To offer more groups, clouds, networks or plans, add entries to the Manual option lists. To list them dynamically, switch those lists to Morpheus Api type, but those lists aren't filtered: Plans, for example, would include every AWS plan.
 - **Disk size is the root disk,** and PostgreSQL data lives there (`/var/lib/postgresql`). It must be at least as large as the template's disk.
 
 ## Test
