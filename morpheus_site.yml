@@ -9,6 +9,10 @@
   gather_facts: true
 
   vars:
+    # POC VMs are rebuilt on the same IP (template 315 hardcodes it), so their
+    # SSH host keys legitimately change between orders. Don't pin them.
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+
     morpheus_options: "{{ (customOptions | default({})) | combine((morpheus | default({})).customOptions | default({})) }}"
 
     postgresql_app_database: "{{ morpheus_options.pgAppDatabase }}"
