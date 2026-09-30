@@ -1,16 +1,19 @@
 ---
 # Step 2 of the Morpheus "PostgreSQL on vSphere" catalog item (POC).
-# Morpheus runs this against the VM it just provisioned and passes the
-# catalog inputs as customOptions. See morpheus/README.md.
+# Morpheus runs this against the VM it just provisioned. Native Morpheus
+# Ansible passes the catalog inputs as morpheus.customOptions (top-level
+# customOptions is empty). See morpheus/README.md.
 - name: Install PostgreSQL on a Morpheus-provisioned VM
   hosts: all
   become: true
   gather_facts: true
 
   vars:
-    postgresql_app_database: "{{ customOptions.pgAppDatabase }}"
-    postgresql_app_user: "{{ customOptions.pgAppUser }}"
-    postgresql_app_password: "{{ customOptions.pgAppPassword }}"
+    morpheus_options: "{{ (customOptions | default({})) | combine((morpheus | default({})).customOptions | default({})) }}"
+
+    postgresql_app_database: "{{ morpheus_options.pgAppDatabase }}"
+    postgresql_app_user: "{{ morpheus_options.pgAppUser }}"
+    postgresql_app_password: "{{ morpheus_options.pgAppPassword }}"
     # POC: app user may connect from any IPv4 network (password auth, app DB only).
     # Narrow this to the application subnet before any non-POC use.
     postgresql_allowed_networks: ["0.0.0.0/0"]
@@ -30,17 +33,6 @@
       - "postgresql-client-{{ postgresql_version }}"
       - "postgresql-contrib-{{ postgresql_version }}"
       - python3-psycopg2
-
-  pre_tasks:
-    # TEMP (POC debugging): show which variable names Morpheus passes, never values.
-    - name: Show Morpheus-provided variable names
-      ansible.builtin.debug:
-        msg:
-          top_level: "{{ hostvars[inventory_hostname].keys() | reject('match', '^ansible_') | list | sort }}"
-          customOptions_keys: "{{ (customOptions | default({})).keys() | list }}"
-          instance_keys: "{{ (instance | default({})).keys() | list if instance is mapping else 'n/a' }}"
-          instance_config_customOptions_keys: "{{ ((instance | default({})).config | default({})).customOptions | default({}) | list if instance is mapping else 'n/a' }}"
-          morpheus_keys: "{{ (morpheus | default({})).keys() | list if morpheus is mapping else 'n/a' }}"
 
   roles:
     - postgresql
