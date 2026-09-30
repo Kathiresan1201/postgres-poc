@@ -1,108 +1,110 @@
 # Morpheus Catalog POC: PostgreSQL on vSphere
 
-One catalog order runs two steps:
+One catalog order, **PostgreSQL on vSphere (POC)**, runs two steps:
 
-1. **Provision VM.** Morpheus clones an Ubuntu template in vCenter, using the group, cloud, network, size and disk size picked in the order form.
-2. **Install PostgreSQL.** A workflow runs [`morpheus_site.yml`](../morpheus_site.yml), which applies `roles/postgresql` to the new VM.
+1. **Provision VM.** Morpheus clones the Ubuntu 22.04 vCenter template `<UBUNTU_22_04_TEMPLATE>` (4 vCPU / 16 GB, disk size from the order form).
+2. **Install PostgreSQL.** The provisioning workflow runs [`morpheus_site.yml`](../morpheus_site.yml), which grows the root filesystem to the ordered disk size and then applies `roles/postgresql`.
 
-These are fixed for the POC: PostgreSQL 16, the role's default tuning, the `postgres` superuser reachable only locally, and no UFW changes. The app user can connect from **any** network (password required, app database only). Before any non-POC use, narrow `postgresql_allowed_networks` in `morpheus_site.yml` to the application subnet.
+An order reaches **Running in about 5–6 minutes** with no manual steps. It was validated end to end on Morpheus 9.0.1: 109 of 109 QA checks passed (see [Validation](#validation)).
+
+Fixed for the POC:
+- **PostgreSQL:** version 16, the role's default tuning, `max_connections` 100.
+- **Admin access:** the `postgres` superuser can only log in locally on the VM (peer auth). No UFW changes.
+- **App access:** the app user can connect from **any** network, with a password, to the app database only. Before any non-POC use, narrow `postgresql_allowed_networks` in `morpheus_site.yml`.
+- **IP address:** every VM gets **<VM_IP>**, because the template hard-codes it (see [Known limitations](#known-limitations)). **Only one VM can run at a time.**
+
+## Order form
+
+| # | Field | Field name | Default / rule |
+|---|---|---|---|
+| 1 | Group | `pocGroup` | vcenter |
+| 2 | Cloud | `pocCloud` | vcenter |
+| 3 | VM Name | `instanceName` | lowercase, `^[a-z][a-z0-9-]{1,62}$` |
+| 4 | Network | `pocNetwork` | VM-workload |
+| 5 | Disk Size (GB) | `pocDiskSize` | 100. Sets the VM disk, and the root filesystem is grown to match |
+| 6 | Database Name | `pgAppDatabase` | appdb, `^[a-z_][a-z0-9_]{0,62}$` |
+| 7 | Database User | `pgAppUser` | appuser, same pattern |
+| 8 | Database Password | `pgAppPassword` | **at least 12 characters** (checked by the role, so a shorter one fails the install step) |
+
+Group, Cloud, Network and Disk Size drive Step 1 (Morpheus). The Database fields are what the playbook reads in Step 2.
 
 ## Prerequisites
 
-- A vSphere cloud in Morpheus, with an Ubuntu 24.04 template registered as a Virtual Image. The POC uses **Morpheus Ubuntu 24.04 20250218** (image 323): a clean image with a 5 GB minimum disk, cloud-init and the agent.
-- VM size of at least 4 GB RAM, because the role defaults to 1 GB `shared_buffers`. The smallest plan offered is 1 vCPU / 4 GB.
-- A cloud-init user for SSH. The image has no stored credentials, so Morpheus uses the Linux user from the ordering user's *User Settings*.
-- Internet access from the VM to `apt.postgresql.org`.
-- This repo pushed to Git.
-- The collections installed on the Morpheus appliance: `ansible-galaxy collection install -r requirements.yml`
+- **Morpheus nodes:** every node has **Ansible** (`apt install ansible`, which includes `community.postgresql` and `community.general`) and **`sshpass`**. Morpheus runs Ansible with password SSH.
+- **vSphere:** a cloud in Morpheus with the template `<UBUNTU_22_04_TEMPLATE>` synced as a Virtual Image.
+- **Image login:** on the Virtual Image, set the SSH user and password to the template's own login, and set **Install Agent** off. The template ignores Morpheus's cloud-init user.
+- **Internet access:** the VM must reach the Ubuntu mirrors, `www.postgresql.org` and `apt.postgresql.org`.
+- **Repo:** this repo on Git (`https://github.com/Kathiresan1201/postgres-poc`, branch `main`).
 
-## Setup
+## Morpheus objects (as configured in the lab)
 
-**1. Ansible integration:** *Administration › Integrations › + New › Ansible*
-Set the Git URL and branch `main`. Playbooks Path `/`, Roles Path `roles`. Leave the group/host vars paths empty. Leave Command Bus off.
+| Object | Name / ID | Key settings |
+|---|---|---|
+| Ansible integration | `postgres-poc-ansible` (2) | Git URL above, branch `main`, Playbooks Path `/`, Roles Path `roles`, no group/host vars, Command Bus **off** |
+| Task | `PostgreSQL POC - Install` (15) | Type Ansible, playbook `morpheus_site.yml`, Execute Target **Resource** |
+| Workflow | `PostgreSQL POC` (2) | Provisioning, Linux, task 15 in the **Provision** phase |
+| Option lists | `POC Groups` / `POC Clouds` / `POC Networks` (Manual) | `vcenter=1` / `vcenter=4` / `VM-workload=101`, `VM Network=83` |
+| Inputs | the 8 fields above | all required, display order as listed |
+| Catalog item | `PostgreSQL on vSphere (POC)` (1) | Type Instance, config below |
 
-**2. Task:** *Library › Automation › Tasks › + Add*
-Type **Ansible**, Repo = the integration above, Playbook `morpheus_site.yml`, Execute Target **Resource**.
+Catalog item config: only the values that matter are shown. Everything else is as the Configuration Wizard generated it.
 
-**3. Workflow:** *Library › Automation › Workflows › + Add › Provisioning Workflow*
-Platform Linux. Add the task to the **Provision** phase.
+```jsonc
+{
+  "type": "vmware",
+  "instance": { "name": "<%=customOptions.instanceName%>", "instanceType": { "code": "vmware" },
+                "layout": { "id": 34 }, "plan": { "id": 227 }, "site": { "id": "<%=customOptions.pocGroup%>" } },
+  "zoneId": "<%=customOptions.pocCloud%>",
+  "plan": { "id": 227 },                          // "Custom VMWare"
+  "servicePlanOptions": { "maxCores": 4, "coresPerSocket": 1, "maxMemory": 17179869184 },
+  "config": {
+    "template": 315,                              // <UBUNTU_22_04_TEMPLATE>
+    "resourcePoolId": "<RESOURCE_POOL>",
+    "createUser": false,                          // use the image's login, not the orderer's
+    "noAgent": true                               // don't wait for the Morpheus agent
+  },
+  "volumes": [ { "rootVolume": true, "name": "root", "size": "<%=customOptions.pocDiskSize%>", "datastoreId": 23 } ],   // <LOCAL_DATASTORE>
+  "networkInterfaces": [ { "network": { "id": "network-<%=customOptions.pocNetwork%>" },
+                           "ipMode": "static", "ipAddress": "<VM_IP>" } ],
+  "taskSetId": 2, "taskSetName": "PostgreSQL POC"
+}
+```
 
-**4. Option lists:** *Library › Options › Option Lists › + Add*
-For the POC, these are **Manual** lists of known-good vCenter values, so every combination is valid. The dataset is shown for this lab; replace the IDs with your own.
+## Running the demo
 
-| Option List | Dataset |
-|---|---|
-| `POC Groups` | `[{"name":"vcenter","value":"1"}]` |
-| `POC Clouds` | `[{"name":"vcenter","value":"4"}]` |
-| `POC Networks` | `[{"name":"VM-workload","value":"101"},{"name":"VM Network","value":"83"}]` |
-| `POC Plans` | `[{"name":"1 vCPU / 4 GB","value":"220"},{"name":"2 vCPU / 8 GB","value":"222"},{"name":"2 vCPU / 16 GB","value":"224"}]` |
-
-**5. Inputs:** *Library › Options › Inputs*. The Field Name must match exactly. Make all of them required.
-
-| Step | Label | Field Name | Type | Option List / Default |
-|---|---|---|---|---|
-| 1 – VM | Group | `pocGroup` | Select List | `POC Groups`, default `1` |
-| 1 – VM | Cloud | `pocCloud` | Select List | `POC Clouds`, default `4` |
-| 1 – VM | Network | `pocNetwork` | Select List | `POC Networks`, default `101` |
-| 1 – VM | VM Size | `pocPlan` | Select List | `POC Plans`, default `220` |
-| 1 – VM | Disk Size (GB) | `pocDiskSize` | Number | default `50` |
-| 1 – VM | VM Name | `instanceName` | Text | e.g. `pgpoc01` |
-| 2 – DB | Database Name | `pgAppDatabase` | Text | e.g. `appdb` |
-| 2 – DB | Database User | `pgAppUser` | Text | e.g. `appuser` |
-| 2 – DB | Database Password | `pgAppPassword` | Password | at least 12 characters |
-
-The Step 1 inputs are used only by Morpheus to build the VM. The Step 2 inputs are the only ones the playbook reads.
-
-**6. Catalog item:** *Library › Blueprints › Catalog Items › + Add › Instance*
-1. Attach the 9 inputs, in the order above.
-2. Run the **Configuration Wizard** once with real selections: group, vSphere cloud, Ubuntu layout, plan, network, datastore and resource pool. Under **Automation**, pick the workflow from step 3.
-3. In the generated Config JSON, replace the values the wizard wrote for these keys, keeping the key names and nesting it produced:
-
-   | Key in Config JSON | Set to |
-   |---|---|
-   | instance name (`name` and/or `instance.name`) | `"<%=customOptions.instanceName%>"` |
-   | group id (`group.id` / `instance.site.id`) | `<%=customOptions.pocGroup%>` |
-   | cloud id (`cloud.id` / `zoneId`) | `<%=customOptions.pocCloud%>` |
-   | plan id (`plan.id` / `instance.plan.id`) | `<%=customOptions.pocPlan%>` |
-   | root volume size (`volumes[0].size`) | `<%=customOptions.pocDiskSize%>` |
-   | network (`networkInterfaces[0].network.id`) | `"network-<%=customOptions.pocNetwork%>"` |
-
-   Example of the edited parts:
-   ```jsonc
-   "zoneId": <%=customOptions.pocCloud%>,
-   "instance": {
-     "name": "<%=customOptions.instanceName%>",
-     "site": { "id": <%=customOptions.pocGroup%> },
-     "plan": { "id": <%=customOptions.pocPlan%> }
-   },
-   "volumes": [
-     { "rootVolume": true, "name": "root", "size": <%=customOptions.pocDiskSize%>, "datastoreId": "auto" }
-   ],
-   "networkInterfaces": [
-     { "network": { "id": "network-<%=customOptions.pocNetwork%>" } }
-   ]
-   ```
-4. Save.
-
-**Notes**
-- **Resource pool, folder and datastore stay as the wizard set them**, and they belong to one specific vCenter. If users can pick a different vSphere cloud, remove those keys, or set the datastore to `"auto"`, so Morpheus uses that cloud's defaults.
-- **The dropdowns are fixed lists.** To offer more groups, clouds, networks or plans, add entries to the Manual option lists. To list them dynamically, switch those lists to Morpheus Api type, but those lists aren't filtered: Plans, for example, would include every AWS plan.
-- **Disk size is the root disk,** and PostgreSQL data lives there (`/var/lib/postgresql`). It must be at least as large as the template's disk.
-
-## Test
-
-1. Order the item from *Provisioning › Catalog*.
-2. Watch the instance's **History** tab. The Ansible output ends with the install summary.
-3. From any host that can reach the VM, connect:
+1. **Delete any existing POC VM first,** because of the one-VM limit on <VM_IP>. Wait until it's gone from *Provisioning › Instances*.
+2. **Order:** *Provisioning › Catalog › PostgreSQL on vSphere (POC)*. Fill in the VM name, DB name, DB user and a **password of 12 or more characters**.
+3. **Watch the steps:** open the instance's **History** tab to see clone, network, SSH, then **execute task**. That task is the Ansible run, and its output ends with *PostgreSQL role completed successfully* and `failed=0`.
+4. **Connect:**
    ```bash
-   psql -h <vm-ip> -U appuser -d appdb
+   ssh ubuntu@<VM_IP>
+   sudo -u postgres psql                                     # superuser, local only
+   psql "host=<VM_IP> dbname=appdb user=appuser"         # app user, password prompt
    ```
 
-## Lessons from the first lab run (Morpheus 9.0.1)
+## Validation
+
+End-to-end QA of a fresh order (2026-09-30):
+
+| Layer | Checks | Result |
+|---|---|---|
+| Morpheus: catalog item, workflow, task, instance, form rejecting bad names | 19 | pass |
+| Role end state: every task's result on the VM, plus root ≈ 97 GB on a 100 GB disk | 66 | pass |
+| Database: TCP login, SSL/scram, CRUD, wrong password / other DB / remote superuser / CREATE DATABASE / CREATE ROLE refused, logging, port reachable | 14 | pass |
+| Idempotency: re-run the task from Morpheus | 2 | 0 changed, 0 failed |
+| Reboot: IP, disk, service, login and settings survive | 8 | pass |
+
+## Known limitations
+
+- **Fixed IP.** The template hard-codes **<VM_IP>** in `/etc/netplan/00-installer-config.yaml` and ignores Morpheus's cloud-init. So every VM gets .106, and Morpheus's hostname and user settings aren't applied. Removing the netplan file and re-enabling cloud-init in the template (in vCenter) would allow parallel orders from the pool.
+- **Host keys aren't pinned.** Because VMs are rebuilt on the same IP, `morpheus_site.yml` turns off SSH host-key checking.
+- **Shared password.** The template password is stored on the Morpheus Virtual Image. Change it after the POC.
+
+## Lessons from the lab (Morpheus 9.0.1)
 
 - **Inputs arrive as `morpheus.customOptions`.** In native Morpheus Ansible, top-level `customOptions` is empty. `morpheus_site.yml` reads both.
-- **Every Morpheus node needs `sshpass`** (`apt install sshpass`) as well as Ansible. Morpheus runs Ansible with password SSH.
-- **The login must match the image.** A hand-built template that ignores Morpheus's cloud-init user needs its own SSH user and password set on the Virtual Image (Library › Virtual Images › Edit).
-- **Template `<UBUNTU_22_04_TEMPLATE>` has a fixed IP (<VM_IP>)** in `/etc/netplan/00-installer-config.yaml`, and ignores Morpheus's cloud-init data. Every VM from it comes up on .106, so only one can run at a time until the template is fixed in vCenter.
-- **The Morpheus Ubuntu images (20250218 / 20260115) never brought up their network** on this vCenter, with DHCP, static or pool addressing. The cause is unknown and needs a vCenter console check.
+- **Every Morpheus node needs `sshpass`** as well as Ansible.
+- **`createUser: true` makes Morpheus log in as the orderer's personal Linux user,** not the image's. Keep it `false` for templates like this one.
+- **The disk-size input only resizes the VM disk.** On a template that ignores cloud-init, the root filesystem stays at the template size. That's why `morpheus_site.yml` grows the partition, LVM and filesystem itself.
+- **The Morpheus Ubuntu images (24.04 20250218 / 20260115) never brought up their network** on this vCenter, with DHCP, static or pool addressing. The cause is unknown and needs a vCenter console check.
 - **Don't put the disk on <VSAN_DATASTORE>.** Morpheus's cloud-init ISO upload to vSAN hangs; use <LOCAL_DATASTORE>.
