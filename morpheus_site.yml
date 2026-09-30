@@ -34,5 +34,53 @@
       - "postgresql-contrib-{{ postgresql_version }}"
       - python3-psycopg2
 
+  pre_tasks:
+    # The catalog's disk size (pocDiskSize) resizes the VM disk, but templates
+    # that ignore cloud-init never grow the filesystem into the new space.
+    - name: Ensure growpart is available
+      ansible.builtin.apt:
+        name: cloud-guest-utils
+        state: present
+
+    - name: Grow root partition, LVM and filesystem to fill the disk
+      ansible.builtin.shell: |
+        set -euo pipefail
+        src=$(findmnt -no SOURCE /)
+        fstype=$(findmnt -no FSTYPE /)
+        vg=""
+        if lvs "$src" >/dev/null 2>&1; then
+          vg=$(lvs --noheadings -o vg_name "$src" | tr -d ' ')
+          pv=$(pvs --noheadings -o pv_name -S vg_name="$vg" | head -1 | tr -d ' ')
+        else
+          pv=$src
+        fi
+        disk=/dev/$(lsblk -no PKNAME "$pv" | head -1)
+        part=$(cat "/sys/class/block/$(basename "$(readlink -f "$pv")")/partition")
+        changed=no
+        out=$(growpart "$disk" "$part" 2>&1) || true
+        case "$out" in *CHANGED*) changed=yes ;; esac
+        if [ -n "$vg" ]; then
+          pvresize "$pv" >/dev/null
+          if [ "$(vgs --noheadings --units b --nosuffix -o vg_free "$vg" | tr -d ' ')" -gt 0 ]; then
+            lvextend -r -l +100%FREE "$src" >/dev/null
+            changed=yes
+          fi
+        elif [ "$changed" = yes ]; then
+          case "$fstype" in
+            xfs) xfs_growfs / >/dev/null ;;
+            *) resize2fs "$src" >/dev/null ;;
+          esac
+        fi
+        echo "changed=$changed"
+        df -h / | tail -1
+      args:
+        executable: /bin/bash
+      register: postgresql_grow_root
+      changed_when: "'changed=yes' in postgresql_grow_root.stdout"
+
+    - name: Show root filesystem size
+      ansible.builtin.debug:
+        msg: "{{ postgresql_grow_root.stdout_lines | last }}"
+
   roles:
     - postgresql
