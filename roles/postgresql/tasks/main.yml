@@ -9,7 +9,6 @@
       - not postgresql_manage_admin_password or postgresql_admin_password is defined
       - not postgresql_create_app_user or postgresql_app_password is defined
     fail_msg: "PostgreSQL role validation failed. Confirm Ubuntu and required vault passwords."
-  no_log: true
   tags: [postgresql, postgresql_validate]
 
 - name: Validate PostgreSQL passwords
