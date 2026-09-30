@@ -98,4 +98,11 @@ The Step 1 inputs are used only by Morpheus to build the VM. The Step 2 inputs a
    psql -h <vm-ip> -U appuser -d appdb
    ```
 
-If the playbook fails with `customOptions is undefined`, Morpheus is passing the inputs under a different name. Add a `debug: var=vars` task to see the actual structure, then adjust `morpheus_site.yml`.
+## Lessons from the first lab run (Morpheus 9.0.1)
+
+- **Inputs arrive as `morpheus.customOptions`.** In native Morpheus Ansible, top-level `customOptions` is empty. `morpheus_site.yml` reads both.
+- **Every Morpheus node needs `sshpass`** (`apt install sshpass`) as well as Ansible. Morpheus runs Ansible with password SSH.
+- **The login must match the image.** A hand-built template that ignores Morpheus's cloud-init user needs its own SSH user and password set on the Virtual Image (Library › Virtual Images › Edit).
+- **Template `<UBUNTU_22_04_TEMPLATE>` has a fixed IP (<VM_IP>)** in `/etc/netplan/00-installer-config.yaml`, and ignores Morpheus's cloud-init data. Every VM from it comes up on .106, so only one can run at a time until the template is fixed in vCenter.
+- **The Morpheus Ubuntu images (20250218 / 20260115) never brought up their network** on this vCenter, with DHCP, static or pool addressing. The cause is unknown and needs a vCenter console check.
+- **Don't put the disk on <VSAN_DATASTORE>.** Morpheus's cloud-init ISO upload to vSAN hangs; use <LOCAL_DATASTORE>.
